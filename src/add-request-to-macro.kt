@@ -1,8 +1,7 @@
 package burp
 
-import com.beust.klaxon.JsonObject
-import com.beust.klaxon.Klaxon
-import com.beust.klaxon.Parser
+import org.json.JSONObject
+import org.json.JSONTokener
 import java.awt.Frame
 import java.net.URL
 import javax.swing.JMenuItem
@@ -45,50 +44,54 @@ class BurpExtender : IBurpExtender, IContextMenuFactory {
 }
 
 
-class Macro(var description: String,
-            val serial_number: Long,
-            val items: MutableList<MacroItem>)
+fun listMacros(): List<String> {
+    val configString = BurpExtender.cb.saveConfigAsJson("project_options.sessions.macros.macros")
+    val root = JSONObject(JSONTokener(configString))
+    val macros = root.getJSONObject("project_options")
+            .getJSONObject("sessions")
+            .getJSONObject("macros")
+            .getJSONArray("macros")
 
-class MacroItem(val request: String,
-                val method: String,
-                val response: String,
-                val custom_parameters: List<String>,
-                val request_parameters: List<String>,
-                val url: String,
-                val status_code: Int)
+    val rc = mutableListOf<String>()
+    for(i in 0 until macros.length()) {
+        rc.add(macros.getJSONObject(i).getString("description"))
+    }
 
-
-fun listMacros(): List<Macro> {
-    var configString = BurpExtender.cb.saveConfigAsJson("project_options.sessions.macros.macros")
-    var configJson = Parser().parse(StringBuilder(configString)) as JsonObject
-    var macrosString = configJson.obj("project_options")?.obj("sessions")?.obj("macros")?.array<JsonObject>("macros")!!.toJsonString()
-    return Klaxon().parseArray<Macro>(macrosString) .orEmpty()
+    return rc
 }
 
 
 fun addMacro(invocation: IContextMenuInvocation, macroName: String?) {
     try {
-        val macros = listMacros()
-        for (macro in macros) {
-            if (macro.description == macroName) {
+        var configString = BurpExtender.cb.saveConfigAsJson("project_options.sessions.macros.macros")
+        val root = JSONObject(JSONTokener(configString))
+        val macros = root.getJSONObject("project_options")
+                .getJSONObject("sessions")
+                .getJSONObject("macros")
+                .getJSONArray("macros")
+
+        for(i in 0 until macros.length()) {
+            val macro = macros.getJSONObject(i)
+
+            if (macro.getString("description") == macroName) {
                 val msg = invocation.selectedMessages?.get(0)!!
                 val requestInfo = BurpExtender.cb.helpers.analyzeRequest(msg.request)
                 val path = requestInfo.headers[0].split(" ")[1]
                 val url = with(msg.httpService) { URL(protocol, host, port, path) }
                 val responseInfo = BurpExtender.cb.helpers.analyzeResponse(msg.response!!)
-                macro.items.add(MacroItem(
-                        String(msg.request, Charsets.ISO_8859_1),
-                        requestInfo.method,
-                        String(msg.response!!, Charsets.ISO_8859_1),
-                        emptyList(),
-                        emptyList(),
-                        url.toExternalForm(),
-                        responseInfo.statusCode.toInt()))
+
+                val macroItem = JSONObject()
+                macroItem.put("request", String(msg.request, Charsets.ISO_8859_1))
+                macroItem.put("method", requestInfo.method)
+                macroItem.put("response", String(msg.response!!, Charsets.ISO_8859_1))
+                macroItem.put("url", url.toExternalForm())
+                macroItem.put("status_code", responseInfo.statusCode.toInt())
+
+                macro.getJSONArray("items").put(macroItem)
             }
         }
-        val configString = "{\"project_options\":{\"sessions\":{\"macros\":{\"macros\": ${Klaxon().toJsonString(macros)} }}}}"
-        BurpExtender.cb.printOutput(configString)
-        BurpExtender.cb.loadConfigFromJson(configString)
+
+        BurpExtender.cb.loadConfigFromJson(root.toString(4))
     }
     catch(ex: Exception) {
         BurpExtender.cb.printError(ex.toString())

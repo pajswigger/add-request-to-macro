@@ -16,8 +16,8 @@ public class SelectMacroDialog extends javax.swing.JDialog {
 
         this.contextMenuInvocation = contextMenuInvocation;
         listModel = (DefaultListModel<String>) jList1.getModel();
-        for(Macro macro : Add_request_to_macroKt.listMacros()) {
-            listModel.addElement(macro.getDescription());
+        for(String macro : Add_request_to_macroKt.listMacros()) {
+            listModel.addElement(macro);
         }
     }
 
